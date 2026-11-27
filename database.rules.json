@@ -2,9 +2,14 @@
   "rules": {
     ".read": false,
     ".write": false,
+    "lastSeen": {
+      ".read": true,
+      "$code": {
+        ".write": true,
+        ".validate": "newData.isNumber()"
+      }
+    },
     "rooms": {
-      ".indexOn": ["meta/lastActive"],
-      ".read": "query.orderByChild === 'meta/lastActive' && query.endAt <= now - 10800000 && query.limitToFirst <= 50",
       "$code": {
         ".read": true,
         ".write": true,

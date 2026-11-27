@@ -254,7 +254,11 @@ function enterRoom(code, id) {
   history.replaceState(null, '', url);
 
   renderRoomShell();
-  const touch = () => { if (!S.leaving) store.update(`rooms/${code}/meta`, { lastActive: store.stamp() }).catch(() => {}); };
+  const touch = () => {
+    if (S.leaving) return;
+    store.set(`lastSeen/${code}`, store.stamp()).catch(() => {});
+    store.update(`rooms/${code}/meta`, { lastActive: store.stamp() }).catch(() => {});
+  };
   touch();
   S.beat = setInterval(touch, HEARTBEAT_MS);
   S.unsub = store.watch(roomPath(), (val) => {
@@ -687,13 +691,16 @@ function setupNotes() {
 }
 
 // ---------- eski odaları silme ----------
-// Sunucu tarafı kod olmadığı için temizliği siteyi açan herkes yapar:
-// 3 saattir kimsenin içinde olmadığı odalar silinir (her açılışta en fazla 50).
+// Sunucu tarafı kod olmadığı için temizliği siteyi açan herkes yapar.
+// lastSeen/{kod} = odanın son etkinlik zamanı; 3 saattir kimsenin içinde olmadığı odalar silinir.
 async function cleanupStaleRooms() {
   try {
-    const cutoff = store.serverNow() - STALE_MS - 60 * 1000;
-    const keys = await withTimeout(store.staleRooms(cutoff, 50), 20000);
-    await Promise.all(keys.filter((k) => k !== S.code).map((k) => store.remove(`rooms/${k}`)));
+    const cutoff = store.serverNow() - STALE_MS;
+    const seen = (await withTimeout(store.get('lastSeen'), 20000)) || {};
+    const keys = Object.entries(seen)
+      .filter(([k, t]) => k !== S.code && (typeof t !== 'number' || t < cutoff))
+      .slice(0, 50).map(([k]) => k);
+    await Promise.all(keys.map(async (k) => { await store.remove(`rooms/${k}`); await store.remove(`lastSeen/${k}`); }));
     if (keys.length) console.info(`Oyun: ${keys.length} eski oda silindi`);
   } catch (err) {
     console.warn('Eski odalar temizlenemedi (Firebase kurallarını güncelledin mi?)', err?.message || err);
