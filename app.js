@@ -105,7 +105,7 @@ modal.addEventListener('click', (e) => { if (e.target === modal || e.target.clos
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modal.hidden) closeModal(); });
 
 async function copy(text) {
-  try { await navigator.clipboard.writeText(text); toast('Bağlantı kopyalandı 📋'); }
+  try { await navigator.clipboard.writeText(text); toast('Bağlantı kopyalandı'); }
   catch {
     openModal(`<h2>Davet bağlantısı</h2><input readonly value="${esc(text)}" onclick="this.select()">
       <div class="row-btns"><span class="spacer"></span><button class="btn primary" data-close>Tamam</button></div>`);
@@ -113,7 +113,7 @@ async function copy(text) {
 }
 
 const demoBanner = () => store.mode === 'local'
-  ? `<div class="demo">🧪 <b>Demo modu:</b> Firebase ayarlanmadığı için veriler sadece bu tarayıcıdaki sekmeler arasında paylaşılıyor.</div>`
+  ? `<div class="demo"><b>Demo modu:</b> Firebase ayarlanmadığı için veriler sadece bu tarayıcıdaki sekmeler arasında paylaşılıyor.</div>`
   : '';
 
 function avatar(name) {
@@ -132,7 +132,7 @@ function renderHome(prefillCode = '') {
       <p>Herkes bir isim yazar, isimler rastgele dağıtılır. Sen herkesin karakterini görürsün ama kendininkini göremezsin. Soru sorarak bul!</p>
     </div>
     ${demoBanner()}
-    <div class="notice warn" id="homeConn" hidden>📡 Sunucuya bağlanılamıyor. İnternet bağlantını kontrol et. Okul/kurum ağı engelliyorsa mobil veriyle dene.</div>
+    <div class="notice warn" id="homeConn" hidden>Sunucuya bağlanılamıyor. İnternet bağlantını kontrol et. Okul/kurum ağı engelliyorsa mobil veriyle dene.</div>
     <form class="panel" id="homeForm" autocomplete="off">
       <label class="field"><span>Adın</span>
         <input id="nameIn" maxlength="24" value="${esc(lastName)}" placeholder="Örn: Mert">
@@ -142,7 +142,7 @@ function renderHome(prefillCode = '') {
       </label>
       <button type="submit" class="btn primary big">Odaya katıl</button>
       <div class="or"><span>ya da</span></div>
-      <button type="button" id="createBtn" class="btn big">✨ Yeni oda kur</button>
+      <button type="button" id="createBtn" class="btn big">Yeni oda kur</button>
     </form>
     <ol class="howto">
       <li><b>Lobi:</b> Biri oda kurar, herkes oda koduyla katılır.</li>
@@ -192,7 +192,7 @@ async function guard(fn) {
 
 function punished(newName) {
   ls('kimim:name', newName);
-  toast(`😏 O isim yasak! Yeni adın: ${newName}`);
+  toast(`O isim yasak! Yeni adın: ${newName}`);
   return newName;
 }
 
@@ -298,10 +298,10 @@ function renderRoomShell() {
     <div class="menu-wrap">
       <button class="icon-btn" id="menuBtn" aria-label="Menü">⋯</button>
       <div class="menu" id="menu" hidden>
-        <button data-act="copy">🔗 Davet bağlantısını kopyala</button>
-        <button data-act="big">📺 Kodu büyük göster</button>
-        <button data-act="newGame" class="host-only" id="newGameBtn">🔄 Yeni oyun (lobiye dön)</button>
-        <button data-act="leave" class="danger">🚪 Odadan çık</button>
+        <button data-act="copy">Davet bağlantısını kopyala</button>
+        <button data-act="big">Kodu büyük göster</button>
+        <button data-act="newGame" class="host-only" id="newGameBtn">Yeni oyun (lobiye dön)</button>
+        <button data-act="leave" class="danger">Odadan çık</button>
       </div>
     </div>
   </header>
@@ -324,9 +324,9 @@ function renderRoomShell() {
 }
 
 const PHASE_TOAST = {
-  lobby: '🔄 Yeni oyun: lobiye dönüldü',
-  naming: '✍️ İsim yazma başladı!',
-  playing: '🎭 Oyun başladı! Soru sormaya başlayın',
+  lobby: 'Yeni oyun: lobiye dönüldü',
+  naming: 'İsim yazma başladı!',
+  playing: 'Oyun başladı! Soru sormaya başlayın',
 };
 
 // Kurucunun tarayıcısı, filtreyi atlatan (ör. eski sürümden gelen) isimleri de düzeltir.
@@ -378,8 +378,8 @@ function buildStage() {
         <h2>Herkes odaya gelsin</h2>
         <p class="muted">Arkadaşların <b>${esc(siteHost())}</b> adresine girip <b class="code-inline">${esc(S.code)}</b> koduyla katılabilir.</p>
         <div class="row-btns center">
-          <button class="btn small" data-act="copy">🔗 Bağlantıyı kopyala</button>
-          <button class="btn small" data-act="big">📺 Kodu büyük göster</button>
+          <button class="btn small" data-act="copy">Bağlantıyı kopyala</button>
+          <button class="btn small" data-act="big">Kodu büyük göster</button>
         </div>
         <div class="subhead"><span>Odadakiler</span><span id="pCount"></span></div>
         <ul class="plist" id="plist"></ul>
@@ -403,8 +403,8 @@ function buildStage() {
     stage.innerHTML = `
     <div class="progress"><div class="bar"><i id="bar"></i></div><span id="progressText"></span></div>
     <nav class="tabs">
-      <button data-tab="players" class="active">👥 Oyuncular</button>
-      <button data-tab="notes">📝 Notlarım <span id="noteCount" class="count"></span></button>
+      <button data-tab="players" class="active">Oyuncular</button>
+      <button data-tab="notes">Notlarım <span id="noteCount" class="count"></span></button>
     </nav>
     <main class="room" id="room">
       <section class="pane players-pane">
@@ -417,15 +417,15 @@ function buildStage() {
           <form id="qForm" class="q-form" autocomplete="off">
             <input id="qInput" maxlength="120" placeholder="Örn: Gerçek biri miyim? Şarkıcı mıyım?">
             <div class="ans">
-              <button type="button" data-a="yes" class="a-yes">👍 Evet</button>
-              <button type="button" data-a="no" class="a-no">👎 Hayır</button>
-              <button type="button" data-a="maybe" class="a-maybe">🤷 Belki</button>
+              <button type="button" data-a="yes" class="a-yes">Evet</button>
+              <button type="button" data-a="no" class="a-no">Hayır</button>
+              <button type="button" data-a="maybe" class="a-maybe">Belki</button>
             </div>
           </form>
           <ul id="qList" class="q-list"></ul>
           <div class="notes-head"><h2>Tahminlerim</h2></div>
           <textarea id="freeNotes" rows="5" placeholder="Aklına gelen isimler, ipuçları…"></textarea>
-          <button class="btn ghost small" id="clearNotes">🧹 Notları temizle</button>
+          <button class="btn ghost small" id="clearNotes">Notları temizle</button>
         </div>
       </aside>
     </main>`;
@@ -456,9 +456,9 @@ function updateLobby() {
   $('#pCount').textContent = `${ps.length} kişi`;
   $('#plist').innerHTML = ps.map((p) => playerRow(p)).join('');
   $('#hostBox').innerHTML = isHost()
-    ? `<button class="btn primary big" data-act="startNaming" ${ps.length < 2 ? 'disabled' : ''}>▶️ Başlat: İsim yazmaya geç</button>
+    ? `<button class="btn primary big" data-act="startNaming" ${ps.length < 2 ? 'disabled' : ''}>Başlat: İsim yazmaya geç</button>
        <p class="muted small center">${ps.length < 2 ? 'Başlatmak için en az 2 kişi gerekli.' : 'Herkes geldiyse başlat. Sonradan gelenler de isim yazabilir.'}</p>`
-    : `<div class="wait">⏳ ${esc(hostName())} oyunu başlatınca isim yazma kısmı açılacak…</div>`;
+    : `<div class="wait">${esc(hostName())} oyunu başlatınca isim yazma kısmı açılacak…</div>`;
 }
 
 // --- 2. isim yazma
@@ -480,9 +480,9 @@ function updateNaming() {
 
   const all = done === ps.length && ps.length >= 2;
   $('#hostBox').innerHTML = isHost()
-    ? `<button class="btn primary big" data-act="startGame" ${all ? '' : 'disabled'}>🎭 Oyunu başlat</button>
+    ? `<button class="btn primary big" data-act="startGame" ${all ? '' : 'disabled'}>Oyunu başlat</button>
        <p class="muted small center">${all ? 'Herkes yazdı! Başlatınca isimler rastgele dağıtılacak.' : `Herkesin yazması bekleniyor (${done}/${ps.length}). Yazmayan birini × ile çıkarabilirsin.`}</p>`
-    : `<div class="wait">${all ? `✅ Herkes yazdı, ${esc(hostName())} oyunu başlatacak…` : `⏳ Herkesin yazması bekleniyor (${done}/${ps.length})`}</div>`;
+    : `<div class="wait">${all ? `Herkes yazdı, ${esc(hostName())} oyunu başlatacak…` : `Herkesin yazması bekleniyor (${done}/${ps.length})`}</div>`;
 }
 
 function renderMyEntry(mine) {
@@ -490,8 +490,8 @@ function renderMyEntry(mine) {
   if (mine && !S.editing) {
     box.innerHTML = `
       <div class="entry-done">
-        <div>✅ Gönderdin: <b>${esc(mine)}</b></div>
-        <button class="btn ghost small" data-act="editEntry">✏️ Değiştir</button>
+        <div>Gönderdin: <b>${esc(mine)}</b></div>
+        <button class="btn ghost small" data-act="editEntry">Değiştir</button>
       </div>`;
     return;
   }
@@ -499,7 +499,7 @@ function renderMyEntry(mine) {
     <form id="entryForm" class="entry-form" autocomplete="off">
       <input id="entryIn" maxlength="40" value="${esc(mine || '')}" placeholder="Örn: Barış Manço">
       <div class="row-btns">
-        <button type="button" class="btn ghost" id="randBtn">🎲 Öner</button>
+        <button type="button" class="btn ghost" id="randBtn">Öner</button>
         <span class="spacer"></span>
         ${S.editing ? '<button type="button" class="btn ghost" data-act="cancelEdit">Vazgeç</button>' : ''}
         <button type="submit" class="btn primary">Gönder</button>
@@ -519,7 +519,7 @@ function renderMyEntry(mine) {
     if (isOffensive(name)) {
       input.value = '';
       const newName = punishName(players().map((p) => p.name));
-      toast(`😏 Bu ismi yazamazsın! Ceza olarak adın artık: ${newName}`);
+      toast(`Bu ismi yazamazsın! Ceza olarak adın artık: ${newName}`);
       store.update(roomPath('players/' + S.me), { name: newName }).catch(() => {});
       ls('kimim:name', newName);
       input.focus();
@@ -538,11 +538,11 @@ function updatePlaying() {
   const found = inGame.filter((p) => p.found).length;
   $('#bar').style.width = inGame.length ? `${(found / inGame.length) * 100}%` : '0';
   $('#progressText').textContent = inGame.length > 1 && found === inGame.length
-    ? '🎉 Herkes buldu!'
+    ? 'Herkes buldu!'
     : `${found}/${inGame.length} kişi buldu`;
 
   if (S.prevFound) {
-    for (const p of ps) if (p.found && !S.prevFound[p.id] && p.id !== S.me) toast(`🎉 ${p.name} karakterini buldu!`);
+    for (const p of ps) if (p.found && !S.prevFound[p.id] && p.id !== S.me) toast(`${p.name} karakterini buldu!`);
   }
   S.prevFound = Object.fromEntries(ps.map((p) => [p.id, !!p.found]));
 
@@ -557,14 +557,14 @@ function renderMe(me) {
     body = `<p class="muted">Bu tur sen katılmadan başladı. Kurucu yeni oyun başlatınca sen de oynayabilirsin. Bu arada diğerlerinin karakterlerini görebilirsin.</p>`;
   } else if (!me.found) {
     body = `
-      <div class="secret">❓ ❓ ❓</div>
+      <div class="secret">? ? ?</div>
       <p class="muted">Karakterin hazır! Sorular sorarak kim olduğunu bul, bildiğinde işaretle.</p>
-      <button class="btn primary big" data-act="found">✅ Buldum!</button>`;
+      <button class="btn primary big" data-act="found">Buldum!</button>`;
   } else {
     body = `
       <div class="reveal">${esc(c.name)}</div>
       <p class="muted">Tebrikler, karakterini buldun! <span class="small">(${esc(c.byName)} yazmıştı)</span></p>
-      <button class="btn ghost small" data-act="unfound">↩︎ Geri al</button>`;
+      <button class="btn ghost small" data-act="unfound">Geri al</button>`;
   }
   $('#meCard').innerHTML = `
     <div class="me-card ${me.found ? 'found' : ''}">
@@ -678,7 +678,7 @@ async function startGame() {
 }
 
 // ---------- notlar (sadece bu cihazda, her tur ayrı) ----------
-const LABEL = { yes: '👍 Evet', no: '👎 Hayır', maybe: '🤷 Belki' };
+const LABEL = { yes: 'Evet', no: 'Hayır', maybe: 'Belki' };
 const CYCLE = { yes: 'no', no: 'maybe', maybe: 'yes' };
 
 function setupNotes() {
