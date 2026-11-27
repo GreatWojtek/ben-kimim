@@ -3,7 +3,26 @@ import { createStore } from './store.js';
 // ---------- yardımcılar ----------
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+const uid = () => (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+  : Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-6));
+
+// Oda bu kadar süre boyunca kimse içindeyken açık değilse silinir.
+const STALE_MS = 3 * 60 * 60 * 1000; // 3 saat
+const HEARTBEAT_MS = 5 * 60 * 1000; // odadaki herkes 5 dakikada bir "buradayım" der
+const NET_TIMEOUT_MS = 12000;
+
+function withTimeout(promise, ms = NET_TIMEOUT_MS) {
+  let t;
+  return Promise.race([
+    promise,
+    new Promise((_, rej) => { t = setTimeout(() => rej(new Error('TIMEOUT')), ms); }),
+  ]).finally(() => clearTimeout(t));
+}
+function errText(err) {
+  if (err?.message === 'TIMEOUT') return 'Sunucuya ulaşılamadı. İnternet bağlantını kontrol edip tekrar dene (gerekirse sayfayı yenile).';
+  if (/permission/i.test(err?.message || '')) return 'Sunucu isteği reddetti. Sayfayı yenileyip tekrar dene.';
+  return 'Bir hata oldu: ' + (err?.message || err);
+}
 const CODE_CHARS = 'ABCDEFGHJKLMNPRSTUVYZ';
 const hue = (s) => { let h = 0; for (const c of s) h = (h * 31 + c.codePointAt(0)) % 360; return h; };
 const initial = (s) => (s.trim()[0] || '?').toLocaleUpperCase('tr');
@@ -35,7 +54,7 @@ const modal = $('#modal');
 const modalBox = $('#modalBox');
 const toastEl = $('#toast');
 let store;
-const S = { code: null, me: null, room: null, unsub: null, unsubConn: null, prevFound: null, leaving: false, stageKey: null, entryKey: null, editing: false };
+const S = { code: null, me: null, room: null, unsub: null, unsubConn: null, prevFound: null, leaving: false, stageKey: null, entryKey: null, editing: false, beat: null, homeConn: null };
 
 const players = () => Object.entries(S.room?.players || {})
   .map(([id, p]) => ({ id, ...p }))
@@ -54,17 +73,42 @@ function toast(msg) {
   toast.t = setTimeout(() => toastEl.classList.remove('show'), 2800);
 }
 
+let pendingAsk = null;
 function openModal(html) {
+  if (pendingAsk) { const r = pendingAsk; pendingAsk = null; r(false); }
   modalBox.innerHTML = html;
   modal.hidden = false;
 }
-function closeModal() { modal.hidden = true; modalBox.innerHTML = ''; }
+function closeModal() {
+  modal.hidden = true; modalBox.innerHTML = '';
+  if (pendingAsk) { const r = pendingAsk; pendingAsk = null; r(false); }
+}
+// Tarayıcının confirm() penceresi yerine (bazı uygulama içi tarayıcılar onu engelliyor).
+function ask(text, okLabel = 'Evet') {
+  return new Promise((resolve) => {
+    openModal(`
+      <p class="ask-text">${esc(text).replace(/\n/g, '<br>')}</p>
+      <div class="row-btns"><span class="spacer"></span>
+        <button class="btn ghost" data-ans="0">Vazgeç</button>
+        <button class="btn primary" data-ans="1">${esc(okLabel)}</button>
+      </div>`);
+    pendingAsk = resolve;
+    modalBox.querySelectorAll('[data-ans]').forEach((b) => b.addEventListener('click', () => {
+      pendingAsk = null;
+      closeModal();
+      resolve(b.dataset.ans === '1');
+    }));
+  });
+}
 modal.addEventListener('click', (e) => { if (e.target === modal || e.target.closest('[data-close]')) closeModal(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modal.hidden) closeModal(); });
 
 async function copy(text) {
   try { await navigator.clipboard.writeText(text); toast('Bağlantı kopyalandı 📋'); }
-  catch { prompt('Bağlantıyı kopyala:', text); }
+  catch {
+    openModal(`<h2>Davet bağlantısı</h2><input readonly value="${esc(text)}" onclick="this.select()">
+      <div class="row-btns"><span class="spacer"></span><button class="btn primary" data-close>Tamam</button></div>`);
+  }
 }
 
 const demoBanner = () => store.mode === 'local'
@@ -87,6 +131,7 @@ function renderHome(prefillCode = '') {
       <p>Herkes bir isim yazar, isimler rastgele dağıtılır. Sen herkesin karakterini görürsün ama kendininkini göremezsin. Soru sorarak bul!</p>
     </div>
     ${demoBanner()}
+    <div class="notice warn" id="homeConn" hidden>📡 Sunucuya bağlanılamıyor. İnternet bağlantını kontrol et. Okul/kurum ağı engelliyorsa mobil veriyle dene.</div>
     <form class="panel" id="homeForm" autocomplete="off">
       <label class="field"><span>Adın</span>
         <input id="nameIn" maxlength="24" value="${esc(lastName)}" placeholder="Örn: Mert">
@@ -105,6 +150,14 @@ function renderHome(prefillCode = '') {
       <li>Karakterini bilince <b>Buldum!</b>'a bas.</li>
     </ol>
   </div>`;
+
+  // Sunucuya gerçekten ulaşılabiliyor mu? (ulaşılamazsa uyarı göster, bağlanınca gizle)
+  let alive = true;
+  withTimeout(store.get('rooms/_ping'), 8000).catch((err) => {
+    if (alive && err?.message === 'TIMEOUT') $('#homeConn')?.removeAttribute('hidden');
+  });
+  const unsubConn = store.onConnection((ok) => { const el = $('#homeConn'); if (el && ok) el.hidden = true; });
+  S.homeConn = () => { alive = false; unsubConn?.(); };
 
   const nameIn = $('#nameIn');
   const codeIn = $('#codeIn');
@@ -132,7 +185,7 @@ async function guard(fn) {
   const btns = app.querySelectorAll('button');
   btns.forEach((b) => (b.disabled = true));
   try { await fn(); }
-  catch (err) { console.error(err); toast('Bir hata oldu: ' + (err.message || err)); }
+  catch (err) { console.error(err); toast(errText(err)); }
   finally { btns.forEach((b) => (b.disabled = false)); }
 }
 
@@ -140,43 +193,45 @@ async function createRoom(name) {
   let code;
   for (let i = 0; i < 12; i++) {
     code = Array.from({ length: 4 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
-    if (!(await store.get(`rooms/${code}/meta`))) break;
+    if (!(await withTimeout(store.get(`rooms/${code}/meta`)))) break;
   }
   const id = uid();
   const now = Date.now();
-  await store.set(`rooms/${code}`, {
-    meta: { createdAt: now, host: id, phase: 'lobby', round: 0 },
+  await withTimeout(store.set(`rooms/${code}`, {
+    meta: { createdAt: now, host: id, phase: 'lobby', round: 0, lastActive: store.stamp() },
     players: { [id]: { name, joinedAt: now } },
-  });
+  }));
   enterRoom(code, id);
 }
 
 async function joinRoom(name, rawCode) {
   const code = rawCode.trim().toUpperCase();
   if (!code) { toast('Oda kodunu yaz'); $('#codeIn')?.focus(); return; }
-  const room = await store.get(`rooms/${code}`);
+  const room = await withTimeout(store.get(`rooms/${code}`));
   if (!room?.meta) { toast('Bu kodla bir oda bulunamadı'); return; }
   const ps = room.players || {};
 
   const saved = ls('kimim:' + code);
   if (saved?.id && ps[saved.id]) {
-    if (ps[saved.id].name !== name) await store.update(`rooms/${code}/players/${saved.id}`, { name });
+    if (ps[saved.id].name !== name) await withTimeout(store.update(`rooms/${code}/players/${saved.id}`, { name }));
     return enterRoom(code, saved.id);
   }
   const same = Object.entries(ps).find(([, p]) => lower(p.name) === lower(name));
   if (same) {
-    if (!confirm(`Odada "${same[1].name}" adında biri zaten var.\n\nO oyuncu sen misin? (Tamam = o oyuncu olarak devam et)`)) return;
+    const me = await ask(`Odada "${same[1].name}" adında biri zaten var.\n\nO oyuncu sen misin? Değilsen adının sonuna bir harf ekleyip (ör. "${same[1].name} K.") tekrar dene.`, 'Evet, benim');
+    if (!me) { $('#nameIn')?.focus(); return; }
     return enterRoom(code, same[0]);
   }
   const id = uid();
-  await store.set(`rooms/${code}/players/${id}`, { name, joinedAt: Date.now() });
-  if (!room.meta.host || !ps[room.meta.host]) await store.update(`rooms/${code}/meta`, { host: id });
+  await withTimeout(store.set(`rooms/${code}/players/${id}`, { name, joinedAt: Date.now() }));
+  if (!room.meta.host || !ps[room.meta.host]) await withTimeout(store.update(`rooms/${code}/meta`, { host: id }));
   enterRoom(code, id);
 }
 
 function cleanupRoom() {
-  S.unsub?.(); S.unsubConn?.();
-  S.unsub = S.unsubConn = null;
+  S.unsub?.(); S.unsubConn?.(); S.homeConn?.();
+  clearInterval(S.beat);
+  S.unsub = S.unsubConn = S.homeConn = S.beat = null;
   closeModal();
 }
 
@@ -199,6 +254,9 @@ function enterRoom(code, id) {
   history.replaceState(null, '', url);
 
   renderRoomShell();
+  const touch = () => { if (!S.leaving) store.update(`rooms/${code}/meta`, { lastActive: store.stamp() }).catch(() => {}); };
+  touch();
+  S.beat = setInterval(touch, HEARTBEAT_MS);
   S.unsub = store.watch(roomPath(), (val) => {
     if (S.leaving) return;
     S.room = val;
@@ -425,7 +483,7 @@ function renderMyEntry(mine) {
     if (!name) { input.focus(); toast('Bir isim yaz'); return; }
     S.editing = false;
     try { await store.set(roomPath('submissions/' + S.me), { name, at: Date.now() }); }
-    catch (err) { console.error(err); toast('Gönderilemedi: ' + (err.message || err)); }
+    catch (err) { console.error(err); toast(errText(err)); }
   });
 }
 
@@ -516,19 +574,19 @@ async function handleAction(act, id) {
       case 'startGame': return startGame();
 
       case 'found':
-        if (!confirm('Karakterini bildin mi? İşaretleyince karakterin sana da gösterilecek.')) return;
+        if (!(await ask('Karakterini bildin mi? İşaretleyince karakterin sana da gösterilecek.', 'Evet, buldum'))) return;
         return store.update(roomPath('players/' + S.me), { found: true, foundAt: Date.now() });
       case 'unfound':
         return store.update(roomPath('players/' + S.me), { found: null, foundAt: null });
 
       case 'kick': {
         const p = S.room.players[id];
-        if (!p || !confirm(`${p.name} odadan çıkarılsın mı?`)) return;
+        if (!p || !(await ask(`${p.name} odadan çıkarılsın mı?`, 'Çıkar'))) return;
         return store.update(roomPath(), { [`players/${id}`]: null, [`submissions/${id}`]: null });
       }
       case 'newGame': {
         if (!isHost()) return;
-        if (!confirm('Yeni oyun: Karakterler ve yazılan isimler silinip lobiye dönülecek. Emin misin?')) return;
+        if (!(await ask('Yeni oyun: Karakterler ve yazılan isimler silinip lobiye dönülecek. Emin misin?', 'Yeni oyun'))) return;
         const upd = { 'meta/phase': 'lobby', submissions: null };
         for (const p of players()) {
           upd[`players/${p.id}/character`] = null;
@@ -538,7 +596,7 @@ async function handleAction(act, id) {
         return store.update(roomPath(), upd);
       }
       case 'leave': {
-        if (!confirm('Odadan çıkmak istiyor musun?')) return;
+        if (!(await ask('Odadan çıkmak istiyor musun?', 'Çık'))) return;
         const rest = players().filter((p) => p.id !== S.me);
         const upd = { [`players/${S.me}`]: null, [`submissions/${S.me}`]: null };
         if (isHost()) upd['meta/host'] = rest[0]?.id || null;
@@ -551,7 +609,7 @@ async function handleAction(act, id) {
     }
   } catch (err) {
     console.error(err);
-    toast('Bir hata oldu: ' + (err.message || err));
+    toast(errText(err));
   }
 }
 
@@ -621,11 +679,25 @@ function setupNotes() {
     save(); draw();
   });
   free.addEventListener('input', () => { notes.free = free.value; save(); });
-  $('#clearNotes').addEventListener('click', () => {
-    if (!confirm('Tüm soruların ve notların silinsin mi?')) return;
+  $('#clearNotes').addEventListener('click', async () => {
+    if (!(await ask('Tüm soruların ve notların silinsin mi?', 'Sil'))) return;
     notes.qs = []; notes.free = ''; free.value = '';
     save(); draw();
   });
+}
+
+// ---------- eski odaları silme ----------
+// Sunucu tarafı kod olmadığı için temizliği siteyi açan herkes yapar:
+// 3 saattir kimsenin içinde olmadığı odalar silinir (her açılışta en fazla 50).
+async function cleanupStaleRooms() {
+  try {
+    const cutoff = store.serverNow() - STALE_MS - 60 * 1000;
+    const keys = await withTimeout(store.staleRooms(cutoff, 50), 20000);
+    await Promise.all(keys.filter((k) => k !== S.code).map((k) => store.remove(`rooms/${k}`)));
+    if (keys.length) console.info(`Ben Kimim: ${keys.length} eski oda silindi`);
+  } catch (err) {
+    console.warn('Eski odalar temizlenemedi (Firebase kurallarını güncelledin mi?)', err?.message || err);
+  }
 }
 
 // ---------- başlat ----------
@@ -642,11 +714,11 @@ async function init() {
     const saved = ls('kimim:' + code);
     if (saved?.id) {
       try {
-        if (await store.get(`rooms/${code}/players/${saved.id}`)) return enterRoom(code, saved.id);
+        if (await withTimeout(store.get(`rooms/${code}/players/${saved.id}`))) return enterRoom(code, saved.id);
       } catch (err) { console.error(err); }
     }
   }
   renderHome(code);
 }
 
-init();
+init().then(() => setTimeout(cleanupStaleRooms, 3000));

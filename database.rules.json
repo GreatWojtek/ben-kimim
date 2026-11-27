@@ -3,6 +3,8 @@
     ".read": false,
     ".write": false,
     "rooms": {
+      ".indexOn": ["meta/lastActive"],
+      ".read": "query.orderByChild === 'meta/lastActive' && query.endAt <= now - 10800000 && query.limitToFirst <= 50",
       "$code": {
         ".read": true,
         ".write": true,
@@ -12,6 +14,11 @@
             "character": {
               "name": { ".validate": "newData.isString() && newData.val().length <= 40" }
             }
+          }
+        },
+        "submissions": {
+          "$pid": {
+            "name": { ".validate": "newData.isString() && newData.val().length <= 40" }
           }
         }
       }

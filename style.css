@@ -209,7 +209,7 @@ p.center { margin: 0; }
 .modal-box { background: var(--surface); border-radius: 20px; padding: 22px; width: 100%; max-width: 460px; display: grid; gap: 12px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
 .modal-box h2 { font-size: 1.25rem; }
 .modal-box p { margin: 0; }
-#assignForm { display: grid; gap: 12px; }
+.ask-text { font-size: 1.05rem; font-weight: 600; line-height: 1.5; }
 #charIn { font-size: 1.15rem; font-weight: 600; }
 .row-btns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .bigcode-wrap { text-align: center; display: grid; gap: 10px; justify-items: center; }

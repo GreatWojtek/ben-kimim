@@ -14,8 +14,18 @@ async function createFirebaseStore() {
   const app = initializeApp(firebaseConfig);
   const database = db.getDatabase(app);
   const r = (p) => db.ref(database, p);
+  let offset = 0;
+  db.onValue(r('.info/serverTimeOffset'), (s) => { offset = s.val() || 0; });
   return {
     mode: 'firebase',
+    serverNow() { return Date.now() + offset; },
+    stamp() { return db.serverTimestamp(); },
+    async staleRooms(cutoff, limit) {
+      const q = db.query(r('rooms'), db.orderByChild('meta/lastActive'), db.endAt(cutoff), db.limitToFirst(limit));
+      const keys = [];
+      (await db.get(q)).forEach((c) => { keys.push(c.key); });
+      return keys;
+    },
     watch(path, cb) { return db.onValue(r(path), (s) => cb(s.val())); },
     async get(path) { return (await db.get(r(path))).val(); },
     set(path, val) { return db.set(r(path), val); },
@@ -52,6 +62,13 @@ function createLocalStore() {
 
   return {
     mode: 'local',
+    serverNow() { return Date.now(); },
+    stamp() { return Date.now(); },
+    async staleRooms(cutoff, limit) {
+      return Object.entries(read().rooms || {})
+        .filter(([, room]) => (room?.meta?.lastActive || 0) <= cutoff)
+        .slice(0, limit).map(([k]) => k);
+    },
     watch(path, cb) {
       const l = { path, cb };
       listeners.add(l);
