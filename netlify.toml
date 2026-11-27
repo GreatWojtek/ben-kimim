@@ -1,0 +1,4 @@
+# Netlify ayarları: derleme yok, klasör olduğu gibi yayınlanır.
+[build]
+  publish = "."
+  command = ""
