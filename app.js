@@ -1,4 +1,5 @@
 import { createStore } from './store.js';
+import { isOffensive, punishName } from './filter.js';
 
 // ---------- yardımcılar ----------
 const $ = (s, r = document) => r.querySelector(s);
@@ -189,7 +190,14 @@ async function guard(fn) {
   finally { btns.forEach((b) => (b.disabled = false)); }
 }
 
+function punished(newName) {
+  ls('kimim:name', newName);
+  toast(`😏 O isim yasak! Yeni adın: ${newName}`);
+  return newName;
+}
+
 async function createRoom(name) {
+  if (isOffensive(name)) name = punished(punishName());
   let code;
   for (let i = 0; i < 12; i++) {
     code = Array.from({ length: 4 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
@@ -210,13 +218,15 @@ async function joinRoom(name, rawCode) {
   const room = await withTimeout(store.get(`rooms/${code}`));
   if (!room?.meta) { toast('Bu kodla bir oda bulunamadı'); return; }
   const ps = room.players || {};
+  const bad = isOffensive(name);
+  if (bad) name = punished(punishName(Object.values(ps).map((p) => p.name)));
 
   const saved = ls('kimim:' + code);
   if (saved?.id && ps[saved.id]) {
     if (ps[saved.id].name !== name) await withTimeout(store.update(`rooms/${code}/players/${saved.id}`, { name }));
     return enterRoom(code, saved.id);
   }
-  const same = Object.entries(ps).find(([, p]) => lower(p.name) === lower(name));
+  const same = !bad && Object.entries(ps).find(([, p]) => lower(p.name) === lower(name));
   if (same) {
     const me = await ask(`Odada "${same[1].name}" adında biri zaten var.\n\nO oyuncu sen misin? Değilsen adının sonuna bir harf ekleyip (ör. "${same[1].name} K.") tekrar dene.`, 'Evet, benim');
     if (!me) { $('#nameIn')?.focus(); return; }
@@ -319,8 +329,29 @@ const PHASE_TOAST = {
   playing: '🎭 Oyun başladı! Soru sormaya başlayın',
 };
 
+// Kurucunun tarayıcısı, filtreyi atlatan (ör. eski sürümden gelen) isimleri de düzeltir.
+function enforceNames() {
+  const ps = players();
+  const names = ps.map((p) => p.name);
+  const upd = {};
+  const rename = (pid) => {
+    if (upd[`players/${pid}/name`] || !S.room.players[pid]) return;
+    const n = punishName(names); names.push(n);
+    upd[`players/${pid}/name`] = n;
+  };
+  for (const p of ps) if (isOffensive(p.name)) rename(p.id);
+  for (const [pid, sub] of Object.entries(S.room.submissions || {})) {
+    if (isOffensive(sub?.name)) { upd[`submissions/${pid}`] = null; rename(pid); }
+  }
+  for (const p of ps) {
+    if (p.character && isOffensive(p.character.name)) upd[`players/${p.id}/character/name`] = 'Yasaklı isim (kurucu yeni oyun başlatsın)';
+  }
+  if (Object.keys(upd).length) store.update(roomPath(), upd).catch(() => {});
+}
+
 function updateRoom() {
   app.classList.toggle('is-host', isHost());
+  if (isHost()) enforceNames();
   $('#newGameBtn').hidden = phase() === 'lobby';
 
   const key = `${phase()}:${round()}`;
@@ -485,6 +516,15 @@ function renderMyEntry(mine) {
     e.preventDefault();
     const name = clean(input.value);
     if (!name) { input.focus(); toast('Bir isim yaz'); return; }
+    if (isOffensive(name)) {
+      input.value = '';
+      const newName = punishName(players().map((p) => p.name));
+      toast(`😏 Bu ismi yazamazsın! Ceza olarak adın artık: ${newName}`);
+      store.update(roomPath('players/' + S.me), { name: newName }).catch(() => {});
+      ls('kimim:name', newName);
+      input.focus();
+      return;
+    }
     S.editing = false;
     try { await store.set(roomPath('submissions/' + S.me), { name, at: Date.now() }); }
     catch (err) { console.error(err); toast(errText(err)); }
