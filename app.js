@@ -8,6 +8,8 @@ const CODE_CHARS = 'ABCDEFGHJKLMNPRSTUVYZ';
 const hue = (s) => { let h = 0; for (const c of s) h = (h * 31 + c.codePointAt(0)) % 360; return h; };
 const initial = (s) => (s.trim()[0] || '?').toLocaleUpperCase('tr');
 const lower = (s) => s.trim().toLocaleLowerCase('tr');
+const clean = (s) => s.trim().replace(/\s+/g, ' ');
+const shuffle = (arr) => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
 function ls(key, val) {
   try {
@@ -33,14 +35,17 @@ const modal = $('#modal');
 const modalBox = $('#modalBox');
 const toastEl = $('#toast');
 let store;
-const S = { code: null, me: null, room: null, unsub: null, unsubConn: null, prevFound: null, leaving: false };
+const S = { code: null, me: null, room: null, unsub: null, unsubConn: null, prevFound: null, leaving: false, stageKey: null, entryKey: null, editing: false };
 
 const players = () => Object.entries(S.room?.players || {})
   .map(([id, p]) => ({ id, ...p }))
   .sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
 const isHost = () => S.room?.meta?.host === S.me;
+const phase = () => S.room?.meta?.phase || 'lobby';
+const round = () => S.room?.meta?.round || 0;
 const roomPath = (p = '') => `rooms/${S.code}${p ? '/' + p : ''}`;
 const roomUrl = () => `${location.origin}${location.pathname}?oda=${S.code}`;
+const siteHost = () => location.host + location.pathname.replace(/index\.html$/, '').replace(/\/$/, '');
 
 function toast(msg) {
   toastEl.textContent = msg;
@@ -52,8 +57,6 @@ function toast(msg) {
 function openModal(html) {
   modalBox.innerHTML = html;
   modal.hidden = false;
-  const f = modalBox.querySelector('input, textarea');
-  if (f) setTimeout(() => { f.focus(); f.select?.(); }, 30);
 }
 function closeModal() { modal.hidden = true; modalBox.innerHTML = ''; }
 modal.addEventListener('click', (e) => { if (e.target === modal || e.target.closest('[data-close]')) closeModal(); });
@@ -65,8 +68,12 @@ async function copy(text) {
 }
 
 const demoBanner = () => store.mode === 'local'
-  ? `<div class="demo">🧪 <b>Demo modu:</b> Firebase ayarlanmadığı için veriler sadece bu tarayıcıdaki sekmeler arasında paylaşılıyor. Sınıfta oynamak için README'deki Firebase adımlarını uygula.</div>`
+  ? `<div class="demo">🧪 <b>Demo modu:</b> Firebase ayarlanmadığı için veriler sadece bu tarayıcıdaki sekmeler arasında paylaşılıyor.</div>`
   : '';
+
+function avatar(name) {
+  return `<span class="avatar" style="--h:${hue(name)}">${esc(initial(name))}</span>`;
+}
 
 // ---------- giriş ekranı ----------
 function renderHome(prefillCode = '') {
@@ -77,7 +84,7 @@ function renderHome(prefillCode = '') {
     <div class="hero">
       <div class="logo">🎭</div>
       <h1>Ben Kimim?</h1>
-      <p>Herkes bir arkadaşına ünlü bir isim verir. Sen herkesin karakterini görürsün, ama kendininkini göremezsin. Soru sorarak bul!</p>
+      <p>Herkes bir isim yazar, isimler rastgele dağıtılır. Sen herkesin karakterini görürsün ama kendininkini göremezsin. Soru sorarak bul!</p>
     </div>
     ${demoBanner()}
     <form class="panel" id="homeForm" autocomplete="off">
@@ -92,9 +99,9 @@ function renderHome(prefillCode = '') {
       <button type="button" id="createBtn" class="btn big">✨ Yeni oda kur</button>
     </form>
     <ol class="howto">
-      <li>Biri oda kurar, diğerleri oda koduyla katılır.</li>
-      <li>Herkes kendisi dışında birine bir insan ismi verir.</li>
-      <li>Sırayla soru sorun, cevapları <b>Notlarım</b>'a yazın.</li>
+      <li><b>Lobi:</b> Biri oda kurar, herkes oda koduyla katılır.</li>
+      <li><b>İsim yazma:</b> Herkes bir insan ismi yazar, sistem isimleri rastgele dağıtır.</li>
+      <li><b>Oyun:</b> Birbirinize soru sorun, cevapları <b>Notlarım</b>'a yazın.</li>
       <li>Karakterini bilince <b>Buldum!</b>'a bas.</li>
     </ol>
   </div>`;
@@ -105,7 +112,7 @@ function renderHome(prefillCode = '') {
   (prefillCode ? nameIn : (lastName ? codeIn : nameIn)).focus();
 
   const getName = () => {
-    const n = nameIn.value.trim().replace(/\s+/g, ' ');
+    const n = clean(nameIn.value);
     if (!n) { toast('Önce adını yaz'); nameIn.focus(); return null; }
     ls('kimim:name', n);
     return n;
@@ -137,7 +144,10 @@ async function createRoom(name) {
   }
   const id = uid();
   const now = Date.now();
-  await store.set(`rooms/${code}`, { meta: { createdAt: now, host: id }, players: { [id]: { name, joinedAt: now } } });
+  await store.set(`rooms/${code}`, {
+    meta: { createdAt: now, host: id, phase: 'lobby', round: 0 },
+    players: { [id]: { name, joinedAt: now } },
+  });
   enterRoom(code, id);
 }
 
@@ -182,7 +192,7 @@ function goHome(prefill = '') {
 // ---------- oda ----------
 function enterRoom(code, id) {
   cleanupRoom();
-  Object.assign(S, { code, me: id, room: null, prevFound: null, leaving: false });
+  Object.assign(S, { code, me: id, room: null, prevFound: null, leaving: false, stageKey: null, entryKey: null, editing: false });
   ls('kimim:' + code, { id });
   const url = new URL(location.href);
   url.searchParams.set('oda', code);
@@ -218,49 +228,14 @@ function renderRoomShell() {
       <div class="menu" id="menu" hidden>
         <button data-act="copy">🔗 Davet bağlantısını kopyala</button>
         <button data-act="big">📺 Kodu büyük göster</button>
-        <button data-act="reset" class="host-only">🔄 Yeni oyun (karakterleri sil)</button>
+        <button data-act="newGame" class="host-only" id="newGameBtn">🔄 Yeni oyun (lobiye dön)</button>
         <button data-act="leave" class="danger">🚪 Odadan çık</button>
       </div>
     </div>
   </header>
   ${demoBanner()}
-  <div class="progress"><div class="bar"><i id="bar"></i></div><span id="progressText"></span></div>
-  <nav class="tabs">
-    <button data-tab="players" class="active">👥 Oyuncular</button>
-    <button data-tab="notes">📝 Notlarım <span id="noteCount" class="count"></span></button>
-  </nav>
-  <main class="room" id="room">
-    <section class="pane players-pane" id="playersPane">
-      <div id="meCard"></div>
-      <div id="waiting"></div>
-      <div id="grid" class="grid"></div>
-    </section>
-    <aside class="pane notes-pane" id="notesPane">
-      <div class="notes-card">
-        <div class="notes-head"><h2>Sorularım</h2><span id="qStats" class="muted small"></span></div>
-        <form id="qForm" class="q-form" autocomplete="off">
-          <input id="qInput" maxlength="120" placeholder="Örn: Gerçek biri miyim? Şarkıcı mıyım?">
-          <div class="ans">
-            <button type="button" data-a="yes" class="a-yes">👍 Evet</button>
-            <button type="button" data-a="no" class="a-no">👎 Hayır</button>
-            <button type="button" data-a="maybe" class="a-maybe">🤷 Belki</button>
-          </div>
-        </form>
-        <ul id="qList" class="q-list"></ul>
-        <div class="notes-head"><h2>Tahminlerim</h2></div>
-        <textarea id="freeNotes" rows="5" placeholder="Aklına gelen isimler, ipuçları…"></textarea>
-        <button class="btn ghost small" id="clearNotes">🧹 Notları temizle</button>
-      </div>
-    </aside>
-  </main>`;
+  <div id="stage"></div>`;
 
-  // sekmeler (mobil)
-  app.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => {
-    app.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('active', x === b));
-    $('#room').classList.toggle('show-notes', b.dataset.tab === 'notes');
-  }));
-
-  // menü
   const menu = $('#menu');
   $('#menuBtn').addEventListener('click', (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; });
   document.addEventListener('click', (e) => { if (!e.target.closest('.menu-wrap')) menu.hidden = true; });
@@ -270,44 +245,214 @@ function renderRoomShell() {
     handleAction(b.dataset.act);
   });
   $('#codePill').addEventListener('click', () => handleAction('big'));
-  $('#playersPane').addEventListener('click', (e) => {
+  $('#stage').addEventListener('click', (e) => {
     const b = e.target.closest('[data-act]'); if (!b) return;
     handleAction(b.dataset.act, b.dataset.id);
   });
-
-  setupNotes();
 }
 
-function updateRoom() {
-  const ps = players();
-  const me = S.room.players[S.me];
-  app.classList.toggle('is-host', isHost());
+const PHASE_TOAST = {
+  lobby: '🔄 Yeni oyun: lobiye dönüldü',
+  naming: '✍️ İsim yazma başladı!',
+  playing: '🎭 Oyun başladı! Soru sormaya başlayın',
+};
 
-  const found = ps.filter((p) => p.found).length;
-  $('#bar').style.width = ps.length ? `${(found / ps.length) * 100}%` : '0';
-  $('#progressText').textContent = ps.length > 1 && found === ps.length
+function updateRoom() {
+  app.classList.toggle('is-host', isHost());
+  $('#newGameBtn').hidden = phase() === 'lobby';
+
+  const key = `${phase()}:${round()}`;
+  if (key !== S.stageKey) {
+    const hadStage = S.stageKey !== null;
+    S.stageKey = key;
+    S.entryKey = null; S.editing = false; S.prevFound = null;
+    buildStage();
+    if (hadStage) toast(PHASE_TOAST[phase()]);
+  }
+  if (phase() === 'lobby') updateLobby();
+  else if (phase() === 'naming') updateNaming();
+  else updatePlaying();
+}
+
+function buildStage() {
+  const stage = $('#stage');
+  const p = phase();
+  if (p === 'lobby') {
+    stage.innerHTML = `
+    <div class="stage">
+      <section class="stage-card">
+        <div class="steps"><span class="on">1 · Lobi</span><span>2 · İsim yazma</span><span>3 · Oyun</span></div>
+        <h2>Herkes odaya gelsin</h2>
+        <p class="muted">Arkadaşların <b>${esc(siteHost())}</b> adresine girip <b class="code-inline">${esc(S.code)}</b> koduyla katılabilir.</p>
+        <div class="row-btns center">
+          <button class="btn small" data-act="copy">🔗 Bağlantıyı kopyala</button>
+          <button class="btn small" data-act="big">📺 Kodu büyük göster</button>
+        </div>
+        <div class="subhead"><span>Odadakiler</span><span id="pCount"></span></div>
+        <ul class="plist" id="plist"></ul>
+        <div id="hostBox" class="host-box"></div>
+      </section>
+    </div>`;
+  } else if (p === 'naming') {
+    stage.innerHTML = `
+    <div class="stage">
+      <section class="stage-card">
+        <div class="steps"><span class="done">1 · Lobi</span><span class="on">2 · İsim yazma</span><span>3 · Oyun</span></div>
+        <h2>Bir insan ismi yaz</h2>
+        <p class="muted">Ünlü ya da gerçek bir insan olabilir. İsimler rastgele dağıtılacak, kendi yazdığın isim sana gelmez. Kimse kimin ne yazdığını oyun başlayana kadar görmez.</p>
+        <div id="myEntry"></div>
+        <div class="subhead"><span>Yazanlar</span><span id="pCount"></span></div>
+        <ul class="plist" id="plist"></ul>
+        <div id="hostBox" class="host-box"></div>
+      </section>
+    </div>`;
+  } else {
+    stage.innerHTML = `
+    <div class="progress"><div class="bar"><i id="bar"></i></div><span id="progressText"></span></div>
+    <nav class="tabs">
+      <button data-tab="players" class="active">👥 Oyuncular</button>
+      <button data-tab="notes">📝 Notlarım <span id="noteCount" class="count"></span></button>
+    </nav>
+    <main class="room" id="room">
+      <section class="pane players-pane">
+        <div id="meCard"></div>
+        <div id="grid" class="grid"></div>
+      </section>
+      <aside class="pane notes-pane">
+        <div class="notes-card">
+          <div class="notes-head"><h2>Sorularım</h2><span id="qStats" class="muted small"></span></div>
+          <form id="qForm" class="q-form" autocomplete="off">
+            <input id="qInput" maxlength="120" placeholder="Örn: Gerçek biri miyim? Şarkıcı mıyım?">
+            <div class="ans">
+              <button type="button" data-a="yes" class="a-yes">👍 Evet</button>
+              <button type="button" data-a="no" class="a-no">👎 Hayır</button>
+              <button type="button" data-a="maybe" class="a-maybe">🤷 Belki</button>
+            </div>
+          </form>
+          <ul id="qList" class="q-list"></ul>
+          <div class="notes-head"><h2>Tahminlerim</h2></div>
+          <textarea id="freeNotes" rows="5" placeholder="Aklına gelen isimler, ipuçları…"></textarea>
+          <button class="btn ghost small" id="clearNotes">🧹 Notları temizle</button>
+        </div>
+      </aside>
+    </main>`;
+    stage.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => {
+      stage.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('active', x === b));
+      $('#room').classList.toggle('show-notes', b.dataset.tab === 'notes');
+    }));
+    setupNotes();
+  }
+}
+
+function playerRow(p, right = '') {
+  const host = isHost();
+  return `
+    <li class="prow">
+      ${avatar(p.name)}
+      <span class="pname">${esc(p.name)}${p.id === S.me ? ' <span class="muted small">(sen)</span>' : ''}${S.room.meta?.host === p.id ? ' <span class="chip">kurucu</span>' : ''}</span>
+      ${right}
+      ${host && p.id !== S.me ? `<button class="icon-btn kick" data-act="kick" data-id="${p.id}" title="Odadan çıkar">×</button>` : ''}
+    </li>`;
+}
+
+function hostName() { return S.room.players[S.room.meta?.host]?.name || 'Kurucu'; }
+
+// --- 1. lobi
+function updateLobby() {
+  const ps = players();
+  $('#pCount').textContent = `${ps.length} kişi`;
+  $('#plist').innerHTML = ps.map((p) => playerRow(p)).join('');
+  $('#hostBox').innerHTML = isHost()
+    ? `<button class="btn primary big" data-act="startNaming" ${ps.length < 2 ? 'disabled' : ''}>▶️ Başlat: İsim yazmaya geç</button>
+       <p class="muted small center">${ps.length < 2 ? 'Başlatmak için en az 2 kişi gerekli.' : 'Herkes geldiyse başlat. Sonradan gelenler de isim yazabilir.'}</p>`
+    : `<div class="wait">⏳ ${esc(hostName())} oyunu başlatınca isim yazma kısmı açılacak…</div>`;
+}
+
+// --- 2. isim yazma
+function updateNaming() {
+  const ps = players();
+  const subs = S.room.submissions || {};
+  const mine = subs[S.me]?.name || null;
+  const done = ps.filter((p) => subs[p.id]).length;
+
+  const entryKey = S.editing || !mine ? `form:${S.editing}` : `done:${mine}`;
+  if (entryKey !== S.entryKey) {
+    S.entryKey = entryKey;
+    renderMyEntry(mine);
+  }
+
+  $('#pCount').textContent = `${done}/${ps.length} kişi yazdı`;
+  $('#plist').innerHTML = ps.map((p) => playerRow(p,
+    subs[p.id] ? '<span class="status ok">✓ yazdı</span>' : '<span class="status wait-dots">yazıyor…</span>')).join('');
+
+  const all = done === ps.length && ps.length >= 2;
+  $('#hostBox').innerHTML = isHost()
+    ? `<button class="btn primary big" data-act="startGame" ${all ? '' : 'disabled'}>🎭 Oyunu başlat</button>
+       <p class="muted small center">${all ? 'Herkes yazdı! Başlatınca isimler rastgele dağıtılacak.' : `Herkesin yazması bekleniyor (${done}/${ps.length}). Yazmayan birini × ile çıkarabilirsin.`}</p>`
+    : `<div class="wait">${all ? `✅ Herkes yazdı, ${esc(hostName())} oyunu başlatacak…` : `⏳ Herkesin yazması bekleniyor (${done}/${ps.length})`}</div>`;
+}
+
+function renderMyEntry(mine) {
+  const box = $('#myEntry');
+  if (mine && !S.editing) {
+    box.innerHTML = `
+      <div class="entry-done">
+        <div>✅ Gönderdin: <b>${esc(mine)}</b></div>
+        <button class="btn ghost small" data-act="editEntry">✏️ Değiştir</button>
+      </div>`;
+    return;
+  }
+  box.innerHTML = `
+    <form id="entryForm" class="entry-form" autocomplete="off">
+      <input id="entryIn" maxlength="40" value="${esc(mine || '')}" placeholder="Örn: Barış Manço">
+      <div class="row-btns">
+        <button type="button" class="btn ghost" id="randBtn">🎲 Öner</button>
+        <span class="spacer"></span>
+        ${S.editing ? '<button type="button" class="btn ghost" data-act="cancelEdit">Vazgeç</button>' : ''}
+        <button type="submit" class="btn primary">Gönder</button>
+      </div>
+    </form>`;
+  const input = $('#entryIn');
+  input.focus();
+  $('#randBtn').addEventListener('click', () => {
+    const pool = SUGGESTIONS.filter((s) => s !== input.value);
+    input.value = pool[Math.floor(Math.random() * pool.length)];
+    input.focus();
+  });
+  $('#entryForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = clean(input.value);
+    if (!name) { input.focus(); toast('Bir isim yaz'); return; }
+    S.editing = false;
+    try { await store.set(roomPath('submissions/' + S.me), { name, at: Date.now() }); }
+    catch (err) { console.error(err); toast('Gönderilemedi: ' + (err.message || err)); }
+  });
+}
+
+// --- 3. oyun
+function updatePlaying() {
+  const ps = players();
+  const inGame = ps.filter((p) => p.character);
+  const found = inGame.filter((p) => p.found).length;
+  $('#bar').style.width = inGame.length ? `${(found / inGame.length) * 100}%` : '0';
+  $('#progressText').textContent = inGame.length > 1 && found === inGame.length
     ? '🎉 Herkes buldu!'
-    : `${found}/${ps.length} kişi buldu`;
+    : `${found}/${inGame.length} kişi buldu`;
 
   if (S.prevFound) {
     for (const p of ps) if (p.found && !S.prevFound[p.id] && p.id !== S.me) toast(`🎉 ${p.name} karakterini buldu!`);
   }
   S.prevFound = Object.fromEntries(ps.map((p) => [p.id, !!p.found]));
 
-  renderMe(me);
-  renderWaiting(ps);
+  renderMe(S.room.players[S.me]);
   renderGrid(ps);
-}
-
-function avatar(name) {
-  return `<span class="avatar" style="--h:${hue(name)}">${esc(initial(name))}</span>`;
 }
 
 function renderMe(me) {
   const c = me.character;
   let body;
   if (!c) {
-    body = `<p class="muted">Henüz kimse sana bir karakter vermedi. Biraz bekle…</p>`;
+    body = `<p class="muted">Bu tur sen katılmadan başladı. Kurucu yeni oyun başlatınca sen de oynayabilirsin. Bu arada diğerlerinin karakterlerini görebilirsin.</p>`;
   } else if (!me.found) {
     body = `
       <div class="secret">❓ ❓ ❓</div>
@@ -316,7 +461,7 @@ function renderMe(me) {
   } else {
     body = `
       <div class="reveal">${esc(c.name)}</div>
-      <p class="muted">Tebrikler, karakterini buldun! <span class="small">(${esc(c.byName)} vermişti)</span></p>
+      <p class="muted">Tebrikler, karakterini buldun! <span class="small">(${esc(c.byName)} yazmıştı)</span></p>
       <button class="btn ghost small" data-act="unfound">↩︎ Geri al</button>`;
   }
   $('#meCard').innerHTML = `
@@ -328,34 +473,14 @@ function renderMe(me) {
     </div>`;
 }
 
-function renderWaiting(ps) {
-  const others = ps.filter((p) => p.id !== S.me);
-  const waiting = others.filter((p) => !p.character);
-  const iGave = ps.some((p) => p.character?.by === S.me);
-  let html = '';
-  if (!others.length) {
-    html = `<div class="notice">👋 Odada şimdilik sadece sen varsın. Arkadaşların <b>${esc(location.host)}</b> adresine girip <b>${esc(S.code)}</b> koduyla katılabilir.
-      <button class="btn small" data-act="copy">🔗 Bağlantıyı kopyala</button></div>`;
-  } else if (waiting.length && !iGave) {
-    html = `<div class="notice warn">✍️ <b>Henüz kimseye isim vermedin!</b> Karakter bekleyenler: ${waiting.map((p) => esc(p.name)).join(', ')}</div>`;
-  } else if (waiting.length) {
-    html = `<div class="notice">⏳ Karakter bekleyenler: ${waiting.map((p) => esc(p.name)).join(', ')}</div>`;
-  }
-  $('#waiting').innerHTML = html;
-}
-
 function renderGrid(ps) {
   const host = isHost();
-  const others = ps.filter((p) => p.id !== S.me);
-  $('#grid').innerHTML = others.map((p) => {
+  $('#grid').innerHTML = ps.filter((p) => p.id !== S.me).map((p) => {
     const c = p.character;
-    const mine = c?.by === S.me;
-    const canEdit = c && (mine || host);
     const charBlock = c
       ? `<div class="char">${esc(c.name)}</div>
-         <div class="by">${mine ? 'Sen verdin' : `${esc(c.byName)} verdi`}
-           ${canEdit ? `<button class="link" data-act="assign" data-id="${p.id}">değiştir</button>` : ''}</div>`
-      : `<button class="btn assign" data-act="assign" data-id="${p.id}">✍️ İsim ver</button>`;
+         <div class="by">${c.by === S.me ? 'Senin yazdığın isim' : `${esc(c.byName)} yazdı`}</div>`
+      : `<div class="by">Bu turda oynamıyor</div>`;
     return `
       <article class="card ${p.found ? 'found' : ''} ${c ? '' : 'empty'}">
         <div class="card-head">${avatar(p.name)}
@@ -376,32 +501,46 @@ async function handleAction(act, id) {
       case 'big': return openModal(`
         <div class="bigcode-wrap">
           <p class="muted">Bu adrese girip kodu yazın</p>
-          <div class="bigurl">${esc(location.host + location.pathname.replace(/index\.html$/, ''))}</div>
+          <div class="bigurl">${esc(siteHost())}</div>
           <div class="bigcode">${esc(S.code)}</div>
           <button class="btn primary" data-close>Kapat</button>
         </div>`);
-      case 'assign': return openAssign(id);
+
+      case 'startNaming':
+        if (!isHost()) return;
+        return store.update(roomPath(), { 'meta/phase': 'naming', submissions: null });
+
+      case 'editEntry': S.editing = true; return updateNaming();
+      case 'cancelEdit': S.editing = false; return updateNaming();
+
+      case 'startGame': return startGame();
+
       case 'found':
         if (!confirm('Karakterini bildin mi? İşaretleyince karakterin sana da gösterilecek.')) return;
         return store.update(roomPath('players/' + S.me), { found: true, foundAt: Date.now() });
       case 'unfound':
         return store.update(roomPath('players/' + S.me), { found: null, foundAt: null });
+
       case 'kick': {
         const p = S.room.players[id];
         if (!p || !confirm(`${p.name} odadan çıkarılsın mı?`)) return;
-        return store.remove(roomPath('players/' + id));
+        return store.update(roomPath(), { [`players/${id}`]: null, [`submissions/${id}`]: null });
       }
-      case 'reset': {
-        if (!confirm('Yeni oyun: Herkesin karakteri ve "buldu" işaretleri silinecek. Emin misin?')) return;
-        const upd = {};
-        for (const p of players()) { upd[`${p.id}/character`] = null; upd[`${p.id}/found`] = null; upd[`${p.id}/foundAt`] = null; }
-        await store.update(roomPath('players'), upd);
-        return toast('Yeni oyun başladı, herkes yeniden isim verebilir');
+      case 'newGame': {
+        if (!isHost()) return;
+        if (!confirm('Yeni oyun: Karakterler ve yazılan isimler silinip lobiye dönülecek. Emin misin?')) return;
+        const upd = { 'meta/phase': 'lobby', submissions: null };
+        for (const p of players()) {
+          upd[`players/${p.id}/character`] = null;
+          upd[`players/${p.id}/found`] = null;
+          upd[`players/${p.id}/foundAt`] = null;
+        }
+        return store.update(roomPath(), upd);
       }
       case 'leave': {
         if (!confirm('Odadan çıkmak istiyor musun?')) return;
         const rest = players().filter((p) => p.id !== S.me);
-        const upd = { [`players/${S.me}`]: null };
+        const upd = { [`players/${S.me}`]: null, [`submissions/${S.me}`]: null };
         if (isHost()) upd['meta/host'] = rest[0]?.id || null;
         S.leaving = true;
         const code = S.code;
@@ -416,59 +555,32 @@ async function handleAction(act, id) {
   }
 }
 
-function openAssign(pid) {
-  const p = S.room.players[pid];
-  if (!p) return;
-  const c = p.character;
-  if (c && c.by !== S.me && !isHost()) return toast(`${p.name} için ${c.byName} zaten isim verdi`);
-  openModal(`
-    <h2>${avatar(p.name)} ${esc(p.name)} kim olsun?</h2>
-    <p class="muted">Gerçek ya da ünlü bir insan ismi yaz. <b>${esc(p.name)}</b> bu ismi göremeyecek, diğer herkes görecek.</p>
-    <form id="assignForm" autocomplete="off">
-      <input id="charIn" maxlength="40" value="${esc(c?.name || '')}" placeholder="Örn: Barış Manço">
-      <div class="row-btns">
-        <button type="button" class="btn ghost" id="randBtn">🎲 Öner</button>
-        ${c ? '<button type="button" class="btn ghost danger-text" id="clearChar">Kaldır</button>' : ''}
-        <span class="spacer"></span>
-        <button type="button" class="btn ghost" data-close>Vazgeç</button>
-        <button type="submit" class="btn primary">Kaydet</button>
-      </div>
-    </form>`);
+async function startGame() {
+  if (!isHost()) return;
+  const ps = players();
+  const subs = S.room.submissions || {};
+  const missing = ps.filter((p) => !subs[p.id]);
+  if (ps.length < 2) return toast('En az 2 kişi gerekli');
+  if (missing.length) return toast(`Henüz yazmayanlar: ${missing.map((p) => p.name).join(', ')}`);
 
-  const input = $('#charIn');
-  $('#randBtn').addEventListener('click', () => {
-    const used = new Set(players().map((x) => lower(x.character?.name || '')));
-    const pool = SUGGESTIONS.filter((s) => !used.has(lower(s)) && s !== input.value);
-    input.value = pool[Math.floor(Math.random() * pool.length)] || SUGGESTIONS[0];
-    input.focus();
+  // Rastgele sırala, herkes bir sonrakine verir: kimse kendi yazdığını almaz.
+  const order = shuffle(ps.map((p) => p.id));
+  const upd = { 'meta/phase': 'playing', 'meta/round': round() + 1 };
+  order.forEach((giver, i) => {
+    const target = order[(i + 1) % order.length];
+    upd[`players/${target}/character`] = { name: subs[giver].name, by: giver, byName: S.room.players[giver].name };
+    upd[`players/${target}/found`] = null;
+    upd[`players/${target}/foundAt`] = null;
   });
-  $('#clearChar')?.addEventListener('click', async () => {
-    await store.update(roomPath('players/' + pid), { character: null, found: null, foundAt: null });
-    closeModal();
-  });
-  $('#assignForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const name = input.value.trim().replace(/\s+/g, ' ');
-    if (!name) { input.focus(); return; }
-    const myName = S.room.players[S.me]?.name || '?';
-    const host = isHost();
-    const ok = await store.transaction(roomPath('players/' + pid), (cur) => {
-      if (!cur) return undefined;
-      if (cur.character && cur.character.by !== S.me && !host) return undefined;
-      return { ...cur, character: { name, by: S.me, byName: myName, at: Date.now() }, found: null, foundAt: null };
-    });
-    if (!ok) toast(`${p.name} için az önce başka biri isim verdi`);
-    else toast(`${p.name} artık "${name}" 🎭`);
-    closeModal();
-  });
+  await store.update(roomPath(), upd);
 }
 
-// ---------- notlar (sadece bu cihazda) ----------
+// ---------- notlar (sadece bu cihazda, her tur ayrı) ----------
 const LABEL = { yes: '👍 Evet', no: '👎 Hayır', maybe: '🤷 Belki' };
 const CYCLE = { yes: 'no', no: 'maybe', maybe: 'yes' };
 
 function setupNotes() {
-  const key = `kimim:notes:${S.code}:${S.me}`;
+  const key = `kimim:notes:${S.code}:${S.me}:${round()}`;
   const notes = ls(key) || { qs: [], free: '' };
   const save = () => ls(key, notes);
   const list = $('#qList');

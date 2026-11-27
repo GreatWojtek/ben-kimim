@@ -1,10 +1,13 @@
 # 🎭 Ben Kimim? — Sınıf oyunu
 
-Herkes kendisi dışında birine bir insan ismi verir. Herkes başkalarının karakterlerini görür ama kendininkini göremez. Sorular sorulur, notlar alınır, bilen **Buldum!**'a basar.
+Herkes bir insan ismi yazar, sistem isimleri rastgele dağıtır (kimse kendi yazdığını almaz). Herkes başkalarının karakterlerini görür ama kendininkini göremez. Sorular sorulur, notlar alınır, bilen **Buldum!**'a basar.
 
-- Tur sistemi yok, oyun canlı oynanır.
-- Notlar (sorular + Evet/Hayır/Belki) her öğrencinin kendi cihazında saklanır.
-- Oda kurucusu oyuncu çıkarabilir ve "Yeni oyun" ile karakterleri sıfırlayabilir.
+Oyun 3 aşamadan oluşur ve aşamaları oda kurucusu ilerletir:
+1. **Lobi** — herkes oda koduyla katılır, kurucu **Başlat**'a basar.
+2. **İsim yazma** — herkes bir isim yazar. Herkes yazınca kurucu **Oyunu başlat**'a basar, isimler rastgele dağıtılır.
+3. **Oyun** — tur sistemi yok, canlı soru sorulur. Notlar (sorular + Evet/Hayır/Belki) her öğrencinin kendi cihazında, her oyun için ayrı saklanır.
+
+Kurucu oyuncu çıkarabilir ve menüden **Yeni oyun** ile lobiye dönebilir.
 
 Site tamamen statik (HTML/CSS/JS). Canlı senkronizasyon için **Firebase Realtime Database** (ücretsiz Spark planı), yayın için **Netlify** (ücretsiz) kullanılır.
 
@@ -48,11 +51,12 @@ Güncelleme yapınca: Site → **Deploys** → klasörü yeniden sürükle.
 ## 3) Sınıfta oynama
 
 1. Öğretmen/bir öğrenci siteyi açar, adını yazıp **Yeni oda kur**'a basar.
-2. Üstteki oda koduna tıklayınca kod tahtaya yansıtılacak kadar büyük görünür. Diğerleri siteye girip adını ve kodu yazarak katılır (ya da **Davet bağlantısını kopyala** ile link paylaşılır).
-3. Herkes kartlarda **İsim ver**'e basıp birine karakter verir (🎲 ile öneri alınabilir). Bir kişiye sadece bir kişi isim verebilir.
-4. Sorular sorulur, cevaplar **Notlarım**'a eklenir.
-5. Bilen **Buldum!**'a basar, karakteri ona da açılır, herkeste "✓ Buldu" görünür.
-6. Yeni tur için kurucu menüden **Yeni oyun**'u seçer.
+2. Üstteki oda koduna tıklayınca kod tahtaya yansıtılacak kadar büyük görünür. Diğerleri siteye girip adını ve kodu yazarak katılır.
+3. Herkes gelince kurucu **Başlat: İsim yazmaya geç**'e basar.
+4. Herkes bir isim yazıp **Gönder**'e basar (🎲 ile öneri alınabilir). Kimin ne yazdığı oyun başlayana kadar görünmez.
+5. Herkes yazınca kurucu **Oyunu başlat**'a basar. Yazmayan biri varsa kurucu onu × ile çıkarabilir.
+6. Sorular sorulur, cevaplar **Notlarım**'a eklenir. Bilen **Buldum!**'a basar, karakteri ona da açılır, herkeste "✓ Buldu" görünür.
+7. Yeni oyun için kurucu menüden **Yeni oyun (lobiye dön)**'ü seçer.
 
 Sayfa yenilense ya da telefon kilitlense bile aynı cihazdan aynı odaya geri dönülür. Farklı cihazdan aynı isimle girince "o oyuncu sen misin?" diye sorar.
 
