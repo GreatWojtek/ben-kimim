@@ -15,6 +15,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; }
 body {
   background: var(--bg); color: var(--text);
@@ -60,7 +61,7 @@ textarea { resize: vertical; }
 .home { max-width: 440px; margin: 0 auto; padding: 32px 16px 48px; display: grid; gap: 20px; }
 .hero { text-align: center; }
 .logo { font-size: 64px; line-height: 1; }
-.hero h1 { font-size: 2.2rem; margin: 8px 0; letter-spacing: -.02em; }
+.hero h1 { font-size: clamp(1.6rem, 7vw, 2.2rem); margin: 8px 0; letter-spacing: -.02em; }
 .hero p { color: var(--muted); margin: 0; }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; display: grid; gap: 14px; box-shadow: var(--shadow); }
 .field { display: grid; gap: 6px; font-weight: 600; font-size: .9rem; }

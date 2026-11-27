@@ -127,7 +127,7 @@ function renderHome(prefillCode = '') {
   <div class="home">
     <div class="hero">
       <div class="logo">🎭</div>
-      <h1>Ben Kimim?</h1>
+      <h1>Mert Şimşekçakan'ın Oyunu</h1>
       <p>Herkes bir isim yazar, isimler rastgele dağıtılır. Sen herkesin karakterini görürsün ama kendininkini göremezsin. Soru sorarak bul!</p>
     </div>
     ${demoBanner()}
@@ -277,7 +277,7 @@ function enterRoom(code, id) {
 function renderRoomShell() {
   app.innerHTML = `
   <header class="top">
-    <div class="brand">🎭 <span>Ben Kimim?</span></div>
+    <div class="brand">🎭 <span>Mert Şimşekçakan'ın Oyunu</span></div>
     <button class="code-pill" id="codePill" title="Kodu büyük göster">Oda <b>${esc(S.code)}</b></button>
     <span class="spacer"></span>
     <span id="conn" class="conn"></span>
@@ -694,7 +694,7 @@ async function cleanupStaleRooms() {
     const cutoff = store.serverNow() - STALE_MS - 60 * 1000;
     const keys = await withTimeout(store.staleRooms(cutoff, 50), 20000);
     await Promise.all(keys.filter((k) => k !== S.code).map((k) => store.remove(`rooms/${k}`)));
-    if (keys.length) console.info(`Ben Kimim: ${keys.length} eski oda silindi`);
+    if (keys.length) console.info(`Oyun: ${keys.length} eski oda silindi`);
   } catch (err) {
     console.warn('Eski odalar temizlenemedi (Firebase kurallarını güncelledin mi?)', err?.message || err);
   }

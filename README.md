@@ -1,4 +1,4 @@
-# 🎭 Ben Kimim? — Sınıf oyunu
+# 🎭 Mert Şimşekçakan'ın Oyunu — Sınıf oyunu
 
 Herkes bir insan ismi yazar, sistem isimleri rastgele dağıtır (kimse kendi yazdığını almaz). Herkes başkalarının karakterlerini görür ama kendininkini göremez. Sorular sorulur, notlar alınır, bilen **Buldum!**'a basar.
 
